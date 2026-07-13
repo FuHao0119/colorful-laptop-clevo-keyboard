@@ -398,12 +398,6 @@ static int __init tuxedo_keyboard_init(void)
 {
 	TUXEDO_INFO("module init\n");
 
-	if (!(dmi_check_system(tuxedo_dmi_string_match)
-	    || (x86_match_cpu(skip_tuxedo_dmi_string_check_match)
-	    && !x86_match_cpu(force_tuxedo_dmi_string_check_match)))) {
-		return -ENODEV;
-	}
-
 	return 0;
 }
 

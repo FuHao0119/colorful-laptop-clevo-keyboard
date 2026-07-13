@@ -304,6 +304,8 @@ int clevo_leds_init(struct platform_device *dev)
 			if (result->type == ACPI_TYPE_BUFFER) {
 				pr_debug("CLEVO_CMD_GET_SPECS result->buffer.pointer[0x0f]: 0x%02x\n", result->buffer.pointer[0x0f]);
 				clevo_kb_backlight_type = result->buffer.pointer[0x0f];
+				if (clevo_kb_backlight_type == 0x26)
+					clevo_kb_backlight_type = CLEVO_KB_BACKLIGHT_TYPE_1_ZONE_RGB;
 				if (clevo_kb_backlight_type) {
 					status = clevo_evaluate_method(CLEVO_CMD_GET_BIOS_FEATURES_2, 0, &result_fallback);
 					if (!status) {
