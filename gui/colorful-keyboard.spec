@@ -5,7 +5,7 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[('../src', 'src'), ('../Makefile', '.'), ('../rpm', 'rpm'), ('../src_pkg', 'src_pkg'), ('../dkms.conf', '.'), ('../tuxedo_keyboard.conf', '.'), ('../LICENSE', '.'), ('icon.jpg', '.')],
+    datas=[('../src', 'src'), ('../Makefile', '.'), ('../rpm', 'rpm'), ('../deb', 'deb'), ('../src_pkg', 'src_pkg'), ('../dkms.conf', '.'), ('../tuxedo_keyboard.conf', '.'), ('../LICENSE', '.'), ('icon.jpg', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

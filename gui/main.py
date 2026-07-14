@@ -36,6 +36,24 @@ def cleanup_service():
         res = subprocess.run(['systemctl', '--user', 'start', 'colorful-keyboard.service'], capture_output=True)
         print(f"[GUI Log] systemctl start 返回状态码: {res.returncode}", file=sys.stderr)
 
+def detect_distro():
+    if not os.path.exists("/etc/os-release"):
+        return "fedora"
+    info = {}
+    try:
+        with open("/etc/os-release", "r") as f:
+            for line in f:
+                if "=" in line:
+                    k, v = line.strip().split("=", 1)
+                    info[k] = v.strip('"')
+    except Exception:
+        pass
+    distro_id = info.get("ID", "").lower()
+    distro_like = info.get("ID_LIKE", "").lower()
+    if "debian" in distro_id or "ubuntu" in distro_id or "mint" in distro_id or "debian" in distro_like or "ubuntu" in distro_like:
+        return "debian"
+    return "fedora"
+
 import atexit
 atexit.register(cleanup_service)
 
@@ -388,30 +406,57 @@ class InstallThread(QThread):
             repo_dir = sys._MEIPASS
         else:
             repo_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-        rpm_file = os.path.join(repo_dir, 'tuxedo-keyboard-3.2.10-1.noarch.rpm')
 
-        commands = (
-            "echo '>>> 1. 正在检查并自动安装构建驱动所需的系统级依赖包 (make, gcc, rpm-build, dkms, kernel-devel)...' && "
-            "dnf install -y make gcc rpm-build dkms && "
-            "(dnf install -y kernel-devel-$(uname -r) || dnf install -y kernel-devel) && "
-            "if [ ! -d /lib/modules/$(uname -r)/build ]; then "
-            "  echo -e '\\n【错误】编译依赖校验失败：未找到当前运行内核的开发文件目录 /lib/modules/'$(uname -r)'/build。' >&2; "
-            "  echo -e '提示：您的运行内核与安装的 kernel-devel 版本不匹配，请运行 [sudo dnf update kernel] 并重启电脑后再试！\\n' >&2; "
-            "  exit 1; "
-            "fi && "
-            f"echo '>>> 2. 正在清理并打包本地驱动源码 (在 {repo_dir} 中)...' && "
-            f"cd '{repo_dir}' && "
-            "make clean && "
-            "make package-rpm && "
-            f"echo '>>> 3. 正在安装并配置编译出的 RPM 驱动包...' && "
-            f"rpm -Uvh --force '{rpm_file}' && "
-            "echo '>>> 4. 正在加载内核驱动模块并配置自动加载与权限规则...' && "
-            "modprobe tuxedo_keyboard dyndbg=+p && "
-            "modprobe uniwill_wmi && modprobe clevo_wmi && modprobe clevo_acpi && modprobe tuxedo_io && "
-            "echo -e 'tuxedo_keyboard\\nuniwill_wmi\\nclevo_wmi\\nclevo_acpi\\ntuxedo_io' > /etc/modules-load.d/tuxedo_keyboard.conf && "
-            "echo 'SUBSYSTEM==\"leds\", KERNEL==\"*kbd_backlight*\", RUN+=\"/bin/sh -c '\''chmod -R a+w /sys/class/leds/%k'\''\"' > /etc/udev/rules.d/99-kbd-backlight.rules && "
-            "udevadm control --reload-rules && udevadm trigger"
-        )
+        distro = detect_distro()
+        if distro == "debian":
+            self.log_signal.emit(">>> 检测到 Debian/Ubuntu 兼容系统，准备采用 apt-get 和 DEB 进行构建...")
+            deb_file = os.path.join(repo_dir, 'tuxedo-keyboard-3.2.10.deb')
+            commands = (
+                "echo '>>> 1. 正在检查并自动安装构建驱动所需的系统级依赖包 (make, gcc, dpkg-dev, dkms, linux-headers)...' && "
+                "apt-get update && apt-get install -y make gcc dpkg-dev dkms linux-headers-$(uname -r) && "
+                "if [ ! -d /lib/modules/$(uname -r)/build ]; then "
+                "  echo -e '\\n【错误】编译依赖校验失败：未找到当前运行内核的开发文件目录 /lib/modules/'$(uname -r)'/build。' >&2; "
+                "  echo -e '提示：您的运行内核与安装的 linux-headers 版本不匹配，请更新内核头文件或重启电脑后再试！\\n' >&2; "
+                "  exit 1; "
+                "fi && "
+                f"echo '>>> 2. 正在清理并打包本地驱动源码 (在 {repo_dir} 中)...' && "
+                f"cd '{repo_dir}' && "
+                "make clean && "
+                "make package-deb && "
+                f"echo '>>> 3. 正在安装并配置编译出的 DEB 驱动包...' && "
+                f"dpkg -i '{deb_file}' && "
+                "echo '>>> 4. 正在加载内核驱动模块并配置自动加载与权限规则...' && "
+                "modprobe tuxedo_keyboard dyndbg=+p && "
+                "modprobe uniwill_wmi && modprobe clevo_wmi && modprobe clevo_acpi && modprobe tuxedo_io && "
+                "echo -e 'tuxedo_keyboard\\nuniwill_wmi\\nclevo_wmi\\nclevo_acpi\\ntuxedo_io' > /etc/modules-load.d/tuxedo_keyboard.conf && "
+                "echo 'SUBSYSTEM==\"leds\", KERNEL==\"*kbd_backlight*\", RUN+=\"/bin/sh -c '\''chmod -R a+w /sys/class/leds/%k'\''\"' > /etc/udev/rules.d/99-kbd-backlight.rules && "
+                "udevadm control --reload-rules && udevadm trigger"
+            )
+        else:
+            self.log_signal.emit(">>> 检测到 Fedora 兼容系统，准备采用 dnf 和 RPM 进行构建...")
+            rpm_file = os.path.join(repo_dir, 'tuxedo-keyboard-3.2.10-1.noarch.rpm')
+            commands = (
+                "echo '>>> 1. 正在检查并自动安装构建驱动所需的系统级依赖包 (make, gcc, rpm-build, dkms, kernel-devel)...' && "
+                "dnf install -y make gcc rpm-build dkms && "
+                "(dnf install -y kernel-devel-$(uname -r) || dnf install -y kernel-devel) && "
+                "if [ ! -d /lib/modules/$(uname -r)/build ]; then "
+                "  echo -e '\\n【错误】编译依赖校验失败：未找到当前运行内核的开发文件目录 /lib/modules/'$(uname -r)'/build。' >&2; "
+                "  echo -e '提示：您的运行内核与安装的 kernel-devel 版本不匹配，请运行 [sudo dnf update kernel] 并重启电脑后再试！\\n' >&2; "
+                "  exit 1; "
+                "fi && "
+                f"echo '>>> 2. 正在清理并打包本地驱动源码 (在 {repo_dir} 中)...' && "
+                f"cd '{repo_dir}' && "
+                "make clean && "
+                "make package-rpm && "
+                f"echo '>>> 3. 正在安装并配置编译出的 RPM 驱动包...' && "
+                f"rpm -Uvh --force '{rpm_file}' && "
+                "echo '>>> 4. 正在加载内核驱动模块并配置自动加载与权限规则...' && "
+                "modprobe tuxedo_keyboard dyndbg=+p && "
+                "modprobe uniwill_wmi && modprobe clevo_wmi && modprobe clevo_acpi && modprobe tuxedo_io && "
+                "echo -e 'tuxedo_keyboard\\nuniwill_wmi\\nclevo_wmi\\nclevo_acpi\\ntuxedo_io' > /etc/modules-load.d/tuxedo_keyboard.conf && "
+                "echo 'SUBSYSTEM==\"leds\", KERNEL==\"*kbd_backlight*\", RUN+=\"/bin/sh -c '\''chmod -R a+w /sys/class/leds/%k'\''\"' > /etc/udev/rules.d/99-kbd-backlight.rules && "
+                "udevadm control --reload-rules && udevadm trigger"
+            )
         self.log_signal.emit(">>> 正在启动 root 交互式终端部署流程...")
 
         try:

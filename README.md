@@ -2,6 +2,8 @@
 
 本分支具体解决了 ` 七彩虹隐星 P15 2024 游戏本 ` 官方无linux驱动、驱动限制加载以及新型号背光无法注册的问题，完美实现了对键盘RGB灯效的控制。
 
+> 理论上同时期生产的同模具笔记本都可以适配
+
 # 硬件与软件环境
 
 * **笔记本型号**：七彩虹 隐星 P15 2024 版 (Colorful P15 24)
@@ -14,7 +16,7 @@
 # 如何使用
 
 ## 使用可执行程序
-如果你是使用dnf包管理器的发行版，那么可以直接使用可执行程序 `releases/colorful-keyboard`
+你可以直接使用可执行程序 `releases/colorful-keyboard` 打开gui界面
 
 ```bash
 chmod +x colorful-keyboard

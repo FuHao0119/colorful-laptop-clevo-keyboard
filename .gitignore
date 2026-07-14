@@ -25,3 +25,11 @@ rpm
 deb/tuxedo-keyboard-*
 *.deb
 *.rpm
+
+# GUI Build results
+gui/build/
+gui/dist/
+gui/*.spec
+gui/__pycache__/
+colorful-keyboard
+
