@@ -133,10 +133,15 @@ exit 1
 %preun
 echo -e
 echo -e "Uninstall of %{module} module (version %{version}-%{release}) beginning:"
-dkms remove -m %{module} -v %{version} --all --rpm_safe_upgrade
-if [ $1 != 1 ];then
+if [ "$1" -eq 0 ]; then
+    dkms remove -m %{module} -v %{version} --all --rpm_safe_upgrade || :
     /usr/sbin/rmmod %{module} > /dev/null 2>&1 || true
     rm -f /etc/modprobe.d/tuxedo_keyboard.conf || true
+elif [ "$1" -eq 1 ]; then
+    # Upgrade scenario: Only remove if a different version is being upgraded to
+    if rpm -q --qf "%{VERSION}\n" %{module} 2>/dev/null | grep -v -q "^%{version}$"; then
+        dkms remove -m %{module} -v %{version} --all --rpm_safe_upgrade || :
+    fi
 fi
 exit 0
 
