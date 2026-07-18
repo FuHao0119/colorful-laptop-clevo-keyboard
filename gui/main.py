@@ -23,9 +23,99 @@ from PyQt5.QtGui import QFont, QColor, QPalette, QIcon, QPixmap
 CONFIG_DIR = os.path.expanduser('~/.config/colorful-keyboard')
 CONFIG_FILE = os.path.join(CONFIG_DIR, 'config.json')
 SYSTEMD_SERVICE_FILE = os.path.expanduser('~/.config/systemd/user/colorful-keyboard.service')
+UDEV_RULES_FILE = '/etc/udev/rules.d/99-kbd-backlight.rules'
+MODULES_CONF_FILE = '/etc/modules-load.d/tuxedo_keyboard.conf'
 
 # Global service state and exit handling
 SERVICE_WAS_RUNNING = False
+
+def ensure_linger():
+    """Enable lingering so user systemd services start at boot without login."""
+    username = os.getenv('USER', '')
+    if not username:
+        return
+    try:
+        result = subprocess.run(
+            ['loginctl', 'show-user', username, '-p', 'Linger'],
+            capture_output=True, text=True
+        )
+        if 'Linger=yes' not in result.stdout:
+            print("[Setup] Enabling linger for user systemd services at boot...", file=sys.stderr)
+            subprocess.run(['loginctl', 'enable-linger', username], capture_output=True)
+    except FileNotFoundError:
+        print("[Setup] loginctl not found, cannot enable linger", file=sys.stderr)
+
+def ensure_modules_autoload():
+    """Create /etc/modules-load.d/tuxedo_keyboard.conf to auto-load keyboard modules at boot."""
+    modules = [
+        'tuxedo_keyboard', 'uniwill_wmi', 'clevo_wmi', 'clevo_acpi', 'tuxedo_io'
+    ]
+    content = '\n'.join(modules) + '\n'
+    try:
+        if not os.path.exists(MODULES_CONF_FILE):
+            print(f"[Setup] Creating {MODULES_CONF_FILE} for module autoloading...", file=sys.stderr)
+            subprocess.run(
+                ['sudo', 'tee', MODULES_CONF_FILE],
+                input=content.encode(), capture_output=True
+            )
+    except Exception as e:
+        print(f"[Setup] Failed to create modules config: {e}", file=sys.stderr)
+
+def ensure_udev_rules():
+    """Create udev rules for non-root keyboard backlight access."""
+    rule = 'SUBSYSTEM=="leds", KERNEL=="*kbd_backlight*", RUN+="/bin/sh -c \'chmod -R a+w /sys/class/leds/%k\'"'
+    try:
+        if not os.path.exists(UDEV_RULES_FILE):
+            print(f"[Setup] Creating {UDEV_RULES_FILE} for non-root access...", file=sys.stderr)
+            subprocess.run(
+                ['sudo', 'tee', UDEV_RULES_FILE],
+                input=rule.encode(), capture_output=True
+            )
+            subprocess.run(['sudo', 'udevadm', 'control', '--reload-rules'], capture_output=True)
+            subprocess.run(['sudo', 'udevadm', 'trigger'], capture_output=True)
+    except Exception as e:
+        print(f"[Setup] Failed to create udev rules: {e}", file=sys.stderr)
+
+def try_load_modules():
+    """Try to load keyboard kernel modules if backlight is not available."""
+    modules = ['tuxedo_keyboard', 'uniwill_wmi', 'clevo_wmi', 'clevo_acpi', 'tuxedo_io']
+    for mod in modules:
+        try:
+            subprocess.run(
+                ['sudo', 'modprobe', mod],
+                capture_output=True, timeout=10
+            )
+        except Exception:
+            pass
+
+def install_service():
+    """Install and enable the systemd user service for autostart at boot."""
+    os.makedirs(os.path.dirname(SYSTEMD_SERVICE_FILE), exist_ok=True)
+    script_path = os.path.abspath(__file__)
+    content = f"""[Unit]
+Description=Colorful Laptop Keyboard Backlight Daemon
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 {script_path} --daemon
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=graphical-session.target
+"""
+    try:
+        with open(SYSTEMD_SERVICE_FILE, 'w') as f:
+            f.write(content)
+        subprocess.run(['systemctl', '--user', 'daemon-reload'], capture_output=True)
+        subprocess.run(['systemctl', '--user', 'enable', 'colorful-keyboard.service'], capture_output=True)
+        ensure_linger()
+        print("[Setup] Service installed and enabled successfully.", file=sys.stderr)
+        return True
+    except Exception as e:
+        print(f"[Setup] Failed to install service: {e}", file=sys.stderr)
+        return False
 
 def cleanup_service():
     global SERVICE_WAS_RUNNING
@@ -822,31 +912,13 @@ class MainWindow(QMainWindow):
         global SERVICE_WAS_RUNNING
         print(f"[GUI Log] on_autostart_toggled 被调用，选中状态为: {checked}", file=sys.stderr)
         if checked:
-            os.makedirs(os.path.dirname(SYSTEMD_SERVICE_FILE), exist_ok=True)
-            script_path = os.path.abspath(__file__)
-            content = f"""[Unit]
-Description=Colorful Laptop Keyboard Backlight Daemon
-After=default.target
-
-[Service]
-Type=simple
-ExecStart=/usr/bin/python3 {script_path} --daemon
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=default.target
-"""
-            try:
-                with open(SYSTEMD_SERVICE_FILE, 'w') as f:
-                    f.write(content)
-                subprocess.run(['systemctl', '--user', 'daemon-reload'], capture_output=True)
-                subprocess.run(['systemctl', '--user', 'enable', 'colorful-keyboard.service'], capture_output=True)
-                # Defer starting the service until the GUI closes to prevent double-write conflicts
+            if install_service():
                 SERVICE_WAS_RUNNING = True
+                ensure_udev_rules()
+                ensure_modules_autoload()
                 print("[GUI Log] 自启动服务已启用，设置 SERVICE_WAS_RUNNING = True", file=sys.stderr)
-            except Exception as e:
-                QMessageBox.warning(self, "错误", f"无法启用自启动服务: {e}")
+            else:
+                QMessageBox.warning(self, "错误", "无法启用自启动服务，请检查权限。")
         else:
             if os.path.exists(SYSTEMD_SERVICE_FILE):
                 try:
@@ -1005,6 +1077,15 @@ def run_daemon(backlight):
     signal.signal(signal.SIGINT, daemon_signal_handler)
     signal.signal(signal.SIGTERM, daemon_signal_handler)
 
+    # Try to load kernel modules if backlight is not yet available
+    if not backlight.is_available():
+        print("[Daemon] Backlight not available, trying to load kernel modules...", file=sys.stderr)
+        try_load_modules()
+        # Refresh LED paths after loading modules
+        backlight.led_dirs = glob.glob('/sys/class/leds/*kbd_backlight*')
+        if not backlight.led_dirs and os.path.exists('/sys/devices/platform/tuxedo_keyboard'):
+            backlight.legacy_mode = True
+
     h = 0.0
     breath_t = 0.0
     strobe_state = True
@@ -1093,9 +1174,25 @@ def run_daemon(backlight):
 def main():
     parser = argparse.ArgumentParser(description="Colorful Laptop Keyboard Backlight GUI & Daemon Manager")
     parser.add_argument('--daemon', action='store_true', help="Run silently in the background using saved config")
+    parser.add_argument('--install-service', action='store_true',
+                        help="Install and enable the systemd user service for autostart at boot")
     args = parser.parse_args()
 
     bl = KeyboardBacklight()
+
+    if args.install_service:
+        print("[Setup] Installing keyboard backlight autostart service...")
+        # Try to load modules first
+        if not bl.is_available():
+            try_load_modules()
+        ensure_modules_autoload()
+        ensure_udev_rules()
+        if install_service():
+            print("[Setup] Done! The keyboard backlight daemon will start automatically at boot.")
+            print("[Setup] To start it now: systemctl --user start colorful-keyboard.service")
+        else:
+            print("[Setup] Failed to install service.")
+        return
 
     if args.daemon:
         run_daemon(bl)
