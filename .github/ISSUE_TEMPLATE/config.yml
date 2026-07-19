@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Latest release
+    url: https://github.com/FuHao0119/colorful-laptop-clevo-keyboard/releases/latest
+    about: Download the latest GUI and driver packages before reporting an installation problem.

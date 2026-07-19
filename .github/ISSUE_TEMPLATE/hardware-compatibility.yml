@@ -1,0 +1,104 @@
+name: Hardware compatibility report
+description: Report whether the driver works on another Colorful or Clevo laptop
+title: "[Compatibility] "
+labels:
+  - compatibility
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢帮助完善兼容性列表。请勿提交序列号、账户名或其他隐私信息。
+
+  - type: input
+    id: laptop
+    attributes:
+      label: Laptop model / 笔记本型号
+      placeholder: Colorful P15 2024
+    validations:
+      required: true
+
+  - type: input
+    id: barebone
+    attributes:
+      label: Clevo barebone model / Clevo 模具型号
+      description: Usually available from BIOS, DMI, product documentation, or the chassis label.
+      placeholder: V250RND
+    validations:
+      required: true
+
+  - type: input
+    id: distribution
+    attributes:
+      label: Linux distribution
+      placeholder: Fedora 44
+    validations:
+      required: true
+
+  - type: input
+    id: kernel
+    attributes:
+      label: Kernel version
+      description: Output of `uname -r`.
+      placeholder: 7.1.0-...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: installation
+    attributes:
+      label: Installation method
+      options:
+        - GUI installer
+        - RPM package
+        - DEB package
+        - Built from source
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: result
+    attributes:
+      label: Result
+      options:
+        - Fully working
+        - Partially working
+        - Driver loads but no backlight device appears
+        - Driver does not load
+        - System becomes unstable
+    validations:
+      required: true
+
+  - type: textarea
+    id: led_devices
+    attributes:
+      label: LED devices
+      description: Output of `ls -la /sys/class/leds`.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Relevant output from `dmesg` or `journalctl`. Remove private information first.
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional notes
+      description: Mention working zones, brightness controls, effects, suspend/resume behavior, or required workarounds.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy confirmation
+      options:
+        - label: I removed serial numbers, usernames, and other private information from the report.
+          required: true

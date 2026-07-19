@@ -1,50 +1,97 @@
-# 这个分支做了什么
+# Colorful / Clevo RGB Keyboard Driver for Linux
 
-本分支具体解决了 ` 七彩虹隐星 P15 2024 游戏本 ` 官方无linux驱动、驱动限制加载以及新型号背光无法注册的问题，完美实现了对键盘RGB灯效的控制。
+七彩虹、Clevo（蓝天模具）游戏本的 Linux 键盘 RGB 背光驱动与图形控制工具。
 
-> 理论上同时期生产的同模具笔记本都可以适配
+Linux RGB keyboard backlight driver and GUI controller for Colorful laptops based on Clevo barebones.
 
-# 硬件与软件环境
+![Colorful P15 keyboard](clevo-backlight-control-linux.png)
 
-* **笔记本型号**：七彩虹 隐星 P15 2024 版 (Colorful P15 24)
-* **主板模具**：Clevo V250RND 准系统
-* **系统环境**：Fedora Linux (已测试 Fedora 44, 内核 7.1.x, x86_64)
-* **控制方式**：通过修改后的 `tuxedo-keyboard` 驱动，生成标准 `/sys/class/leds/rgb:kbd_backlight` 接口，并配合 Python 脚本控制效果。
+## 项目简介
 
-> 目前只在这个环境做过测试，其他环境能不能用还不清楚
+本项目解决七彩虹隐星 P15 2024 在 Linux 下缺少官方键盘背光驱动、驱动无法加载以及新型号背光设备无法注册的问题。
 
-# 如何使用
+项目基于修改后的 `tuxedo-keyboard` 驱动，将键盘背光注册为标准 Linux LED 设备：
 
-## 使用可执行程序
-你可以直接使用可执行程序 `releases/colorful-keyboard` 打开gui界面
+```text
+/sys/class/leds/rgb:kbd_backlight
+```
+
+配套工具提供：
+
+- 图形化 RGB 灯效控制
+- 流光彩虹、呼吸和静态灯效
+- 系统托盘和用户级 systemd 后台服务
+- Fedora/RHEL 与 Debian/Ubuntu 安装流程
+- RPM、DEB 和 DKMS 打包
+- 新 Clevo 模具背光规格调试
+
+## 兼容性
+
+| 笔记本型号 | Clevo 模具 | 发行版 | 内核 | 状态 |
+| --- | --- | --- | --- | --- |
+| 七彩虹隐星 P15 2024 | V250RND | Fedora 44 x86_64 | 7.1.x | 已验证 |
+| 其他 V250RND 同模具机型 | V250RND | 未验证 | 未验证 | 理论兼容，需要用户反馈 |
+
+目前只有表中第一项经过实际验证。内核驱动存在硬件风险，请确认模具型号，并准备从 TTY 或恢复模式卸载模块后再尝试。
+
+如果你的设备可以使用，欢迎通过 [硬件兼容性报告](https://github.com/FuHao0119/colorful-laptop-clevo-keyboard/issues/new?template=hardware-compatibility.yml) 提交型号和系统信息，帮助完善兼容性列表。
+
+## 快速开始
+
+### 下载发布版本
+
+推荐从 [GitHub Releases](https://github.com/FuHao0119/colorful-laptop-clevo-keyboard/releases/latest) 下载 `colorful-keyboard` 和对应驱动包。
 
 ```bash
 chmod +x colorful-keyboard
+./colorful-keyboard
 ```
-双击执行程序，在程序中安装环境和驱动包
 
-> 如果安装不上环境，可以手动按照下面的方法安装驱动包，程序能自动识别
+GUI 可以检测系统、安装构建依赖和驱动，并配置灯效。如果自动安装失败，请使用下面的手动方式。
 
-## 手动安装安装驱动包
-* 如果你是RedHat系的发行版，可以手动安装 `releases` 下的驱动包:
+### 从源码运行 GUI
+
+```bash
+git clone https://github.com/FuHao0119/colorful-laptop-clevo-keyboard.git
+cd colorful-laptop-clevo-keyboard
+python3 -m pip install PyQt5
+python3 gui/main.py
+```
+
+## 安装驱动
+
+### Fedora / RHEL
+
+安装仓库中已有的 RPM：
+
 ```bash
 sudo dnf install ./tuxedo-keyboard-3.2.10-1.noarch.rpm
 ```
-或者你也可以自己编译:
+
+或者本地构建：
+
 ```bash
+sudo dnf install -y make gcc rpm-build dkms kernel-devel-$(uname -r)
 make clean
 make package-rpm
 sudo dnf install ./tuxedo-keyboard-3.2.10-1.noarch.rpm
 ```
-* 如果你是debain系的发行版，可以自己编译:
+
+### Debian / Ubuntu
+
 ```bash
+sudo apt install -y make gcc dpkg-dev dkms linux-headers-$(uname -r)
 make clean
 make package-deb
+sudo apt install ./tuxedo-keyboard-*.deb
 ```
 
-### 配置开机自动载入与免密控制
-为了保证以后开机即用且无需使用 `sudo` 权限控制灯效，请完成以下两项系统配置：
-* 创建配置文件，使系统开机自动加载这5个内核模块: 
+安装新内核后需要有匹配的内核头文件，DKMS 才能重新构建驱动。
+
+## 系统配置
+
+### 开机加载模块
+
 ```bash
 sudo tee /etc/modules-load.d/tuxedo_keyboard.conf << 'EOF'
 tuxedo_keyboard
@@ -54,111 +101,104 @@ clevo_acpi
 tuxedo_io
 EOF
 ```
-* 配置免 Root 控制权限
+
+### 非 Root 灯效控制
+
+以下规则会允许本机用户写入匹配的键盘背光设备。多用户环境中请根据自己的安全需求收紧权限。
+
 ```bash
 sudo tee /etc/udev/rules.d/99-kbd-backlight.rules << 'EOF'
 SUBSYSTEM=="leds", KERNEL=="*kbd_backlight*", RUN+="/bin/sh -c 'chmod -R a+w /sys/class/leds/%k'"
 EOF
 
-sudo udevadm control --reload-rules && sudo udevadm trigger
+sudo udevadm control --reload-rules
+sudo udevadm trigger
 ```
 
-### 使用python脚本控制灯效
+## 灯效脚本
+
 ```bash
 chmod +x ./light-control-scripts/kbd_light_show.py
-```
 
-```bash
-# 流光彩虹效果
+# 流光彩虹
 ./light-control-scripts/kbd_light_show.py --mode rainbow --speed 1.5
-# 呼吸灯效
+
+# 呼吸灯
 ./light-control-scripts/kbd_light_show.py --mode breath --color blue --speed 1.2
+
 # 静态灯光
 ./light-control-scripts/kbd_light_show.py --mode solid --color cyan --brightness 180
 ```
 
-# 编译与打包
-在开始编译前，需要确保系统安装了编译链工具以及对应当前内核的开发头文件：
-```bash
-# Fedora / RHEL
-sudo dnf install -y make gcc rpm-build dkms kernel-devel-$(uname -r)
+## GUI 与后台服务
 
-# Ubuntu / Debian
-sudo apt install -y make gcc dpkg-dev dkms linux-headers-$(uname -r)
+GUI 基于 Python 3 和 PyQt5，支持系统托盘、灯效预览和用户级 systemd 服务。
+
+后台模式通过 `--daemon` 启动，并读取：
+
+```text
+~/.config/colorful-keyboard/config.json
 ```
 
-* 构建驱动分发包
-根目录下设计了规范的自动化 Makefile，可以直接调用底层包管理器规范：
+GUI 运行时会暂停后台服务，防止多个进程同时写入背光设备；GUI 退出后会恢复服务。
 
-编译并打包 RPM 安装包 (Fedora/CentOS/openSUSE):
-```bash
-make package-rpm
-```
-这会在根目录下生成 `tuxedo-keyboard-3.2.10-1.noarch.rpm`，并自动打包 dkms 配置。
-
-编译并打包 DEB 安装包 (Ubuntu/Debian/Mint):
-```bash
-make package-deb
-```
-这会在根目录下生成对应的 `.deb` 安装包。
-
-清理编译缓存:
-```bash
-make clean
-```
-
-* GUI 控制管理器开发与打包
-图形管理程序基于 **Python 3** 与 **PyQt5** 编写，支持系统托盘缩入、自启动 Systemd 服务托管、实时灯效动画预览以及免依赖的一键驱动部署编译。
-
-开发 GUI 需要以下运行库支持：
-```bash
-# 安装 PyQt5 界面库
-pip install PyQt5
-```
-
-在项目根目录下调用 python 执行 GUI 脚本：
-```bash
-python3 gui/main.py
-```
-Daemon 模式：在被 Systemd 自启动服务调用时，后台会自动带上 `--daemon` 参数启动为无界面的纯逻辑守护循环，通过读取 `~/.config/colorful-keyboard/config.json` 的配置在后台控制键盘写值。
-
-GUI 与 Daemon 独占控制：在运行 GUI 时，它会主动通过 `systemctl --user stop` 挂起后台服务，防止多重写值造成频闪；GUI 退出时，会自动重新拉起后台服务恢复托管。
+开发和打包：
 
 ```bash
-pip install pyinstaller
-```
-进入 `gui` 目录，执行以下打包指令：
-```bash
+python3 -m pip install PyQt5 pyinstaller
 cd gui
-python3 -m PyInstaller \
-    --onefile \
-    --windowed \
-    --name="colorful-keyboard" \
-    --add-data "../src:src" \
-    --add-data "../Makefile:." \
-    --add-data "../rpm:rpm" \
-    --add-data "../src_pkg:src_pkg" \
-    --add-data "../dkms.conf:." \
-    --add-data "../tuxedo_keyboard.conf:." \
-    --add-data "../LICENSE:." \
-    --add-data "icon.jpg:." \
-    main.py
+python3 -m PyInstaller colorful-keyboard.spec
 ```
 
-打包完成后，可以在 `gui/dist/` 目录下找到编译好的 `colorful-keyboard` 单文件绿色程序，可直接拷贝到任何同架构的 Linux 系统上双击运行并分发。
+构建结果位于 `gui/dist/`。
 
+## 适配新型号
 
-* 获取笔记本背光规格码
-如果您在适配新的笔记本模具，可以开启内核动态调试参数来捕获硬件上报的背光规格码：
+如果你的电脑也是 Clevo 模具但没有识别出背光设备，可以收集驱动日志：
+
 ```bash
-# 卸载冲突的旧模块
 sudo modprobe -r tuxedo_keyboard clevo_wmi clevo_acpi
-
-# 重新载入并启用调试输出
 sudo modprobe tuxedo_keyboard dyndbg=+p
 sudo modprobe clevo_wmi
 sudo modprobe clevo_acpi
-
-# 查看内核日志（寻找"backlight type"相关输出）
 sudo dmesg -w | grep -E "tuxedo|clevo"
 ```
+
+提交 Issue 前请隐藏序列号、用户名和其他隐私信息。不要只粘贴截图，尽量附上可搜索的文本日志。
+
+## 故障排查
+
+确认背光设备是否注册：
+
+```bash
+ls /sys/class/leds
+```
+
+查看模块状态：
+
+```bash
+lsmod | grep -E "tuxedo|clevo|uniwill"
+```
+
+查看 DKMS 状态：
+
+```bash
+dkms status
+```
+
+卸载本项目模块：
+
+```bash
+sudo modprobe -r tuxedo_io uniwill_wmi clevo_wmi clevo_acpi tuxedo_keyboard
+```
+
+## 参与贡献
+
+- 新设备请使用硬件兼容性 Issue 模板。
+- Bug 报告请附发行版、内核版本、Clevo 模具型号、安装方式和相关日志。
+- 欢迎提交对其他 Colorful/Clevo 型号的支持和文档补充。
+- 如果项目解决了你的问题，可以给仓库一个 Star，让更多相同硬件的 Linux 用户找到它。
+
+## 许可证与来源
+
+本项目基于 `tuxedo-keyboard` 相关驱动代码修改，并按照 [GPL-3.0 License](LICENSE) 发布。
